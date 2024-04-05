@@ -1,4 +1,4 @@
-# Kubernetes Certified Application Developer (CKAD) with Tests
+# kubernetes_course
 
 ## Content
 - [Preparation](#preparation)
@@ -26,6 +26,12 @@
   - [ConfigMaps](#configmaps)
   - [Secrets](#secrets)
   - [Encrypting Secret Data at Rest](#encrypting-secret-data-at-rest)
+  - [Security Context](#security-context)
+  - [Service Account](#service-account)
+  - [Resource Requirements](#resource-requirements)
+  - [Taints and Tolerations](#taints-and-tolerations)
+  - [Node Selectors](#node-selectors)
+  - [Node Affinity](#node-affinity)
 
 
 ## Preparation
@@ -67,7 +73,6 @@ Then `source ~/.bashrc` / `source ~/.zshrc` to reload current terminal if needed
 
 # Introduction
 
-> WIP
 
 # Section 2: Core Concepts
 
@@ -610,4 +615,170 @@ spec:
 
 ## Encrypting Secret Data at Rest
 
-> WIP
+# WIP
+
+## Security Context
+
+- Docker Security:
+
+By default, Docker run processes as root user (within and outside containers).
+
+The user can be set in the Dockerfile so the image will use it.
+
+Example:
+
+```bash
+FROM ubuntu
+USER 1000
+```
+Additional privilieges can be added to the user if needed using flags.
+
+Example: 
+
+`docker run --cap-add MC_ADMIN ubuntu`
+
+- Kubernetes Security:
+
+the privileges can be configured in Kubernetes, at a Container and / or Pod level.
+
+The settings fro mcontainer will overwrite the ones from the Pod.
+
+Example:
+
+```bash
+spec:
+  securityContext:
+    runAsUser: 1000
+    capabilities:
+      add: ["MC_ADMIN"]
+```
+
+We can move the above under `containers:` property to be applied to the container.
+And also add capabilites (not available at Pod level).
+
+```bash
+spec:
+  ...
+  containers:
+    securityContext:
+      runAsUser: 1000
+      capabilities:
+        add: ["MC_ADMIN"]
+```
+
+## Service Account
+
+Two types of accounts: User (used by humans, like developers) and Service (used by machine, like applications for monitoring).
+
+`kubectl create serviceaccount dashboard-sa`
+
+A token is created as well, used by an external application for authentication.
+
+The token is stored as a Secret Object. This Object is linked to the Service Account.
+
+`kubectl get serviceaccount`
+
+If the Application is hosted in the same cluster, then the process is simple. 
+
+The service token secret can be mounted in the application pod.
+
+For every Namespace, a service account `default` is created, and the token is automatically mounted in the pods.
+
+Inspecting a Pod we will find a Volumen with a secret token information.
+
+From version 1.22, introducing TokenRequestAPI. That generates the token with a define lifetime, and mounted as a Secret Object.
+
+
+## Resource Requirements
+
+Every Pod requires a set of resources to run. It consumes the ones available from the Node.
+
+The Scheduler decides which Node a Pod should use, considering the resources available and indentifies the best Node for it.
+
+If Nodes have no sufficient resources, it holds it back (Pending).
+
+Amount of CPU and Memory can be specified in the Pod definition, for each container.
+
+```bash
+containers:
+  ...
+  resources:
+    requests:
+      memory: "4Gi"
+      cpu: 2
+    limits:
+      memory: "6Gi"
+      cpu: 3
+```
+When a Pod tries to exeed the memory limits, the Pod will terminated with an OOM (Out Of Memory) error.
+
+By default, kbs does not have limits. So every Pod (or container within a Pod) can consume as much as is needs.
+
+Best scenario is setting requests but no limits, so containers can use resources as needed as long as other pods don't need them. In that case, all the Pods need to have the requests set, so other Pods don't consume all the resources.
+
+## Taints and Tolerations
+
+Pod to Node relationships and how to restrict what Pod is placed in which Node.
+
+We can place a Taint on a Node, to prevent some Pods to be placed in it. Only the ones with a Toleration for that Taint can be placed there.
+
+Examples:
+
+`kubectl taint nodes node-name key=value:taint-effect`
+
+`kubectl taint nodes node1 app=blue:NoSchedule`
+
+```bash
+spec:
+  ...
+  containers:
+    ...
+  tolerations:
+  - key: "app"
+    operator: "Equal"
+    value: "blue"
+    effect: "NoSchedule"
+```
+
+## Node Selectors
+
+When Node have different Hardware resources, we can dedicate some processes to the larger / more resourceful nodes.
+
+In the default set up, all pods can go to any node.
+
+We can create a limitation on the Pods to only run in certain Nodes.
+
+```bash
+spec:
+  containers:
+    ...
+  nodeSelector:
+    size: Large
+```
+
+The key / value pair of `size=Large` are labels assigned to the Nodes.
+
+To label a Node:
+
+`kubectl label nodes <node-name> <label-key>=<label-value>`
+
+`kubectl label nodes node-1 size=Large`
+
+## Node Affinity
+
+Ensure that Pods are hosted in particular Nodes. Allows more advanced expresions than Node Selectors.
+
+```bash
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: size
+              operator: In
+              values:
+                - Large
+```
+
+Operator can be `NotIn` for example, to avoid Nodes.
+
